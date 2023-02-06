@@ -10,15 +10,18 @@ import com.oblac.jrsmq.cmd.PopMessageCmd;
 import com.oblac.jrsmq.cmd.ReceiveMessageCmd;
 import com.oblac.jrsmq.cmd.SendMessageCmd;
 import com.oblac.jrsmq.cmd.SetQueueAttributesCmd;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisCommands;
 
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.function.Supplier;
 
 public class RedisSMQ {
 
-	protected final JedisPool jedisPool;
+	protected final RedisClient redisClient;
 	protected final RedisSMQConfig config;
 
 	public RedisSMQ() {
@@ -28,12 +31,20 @@ public class RedisSMQ {
 	public RedisSMQ(RedisSMQConfig config) {
 		try {
 			this.config = config;
-			JedisPoolConfig poolConfig = new JedisPoolConfig();
-			poolConfig.setMaxIdle(128);
-			poolConfig.setMaxTotal(128);
-			jedisPool = new JedisPool(
-					poolConfig, config.host(), config.port(), config.timeout(), config.password(), config.database(), null, config.ssl());
-			initScript(jedisPool.getResource());
+
+			RedisURI redisURI = RedisURI.Builder
+				.redis("localhost", 6379)
+				.withDatabase(config.database())
+				.withHost(config.host())
+				.withPassword(config.password() == null ? null : config.password().toCharArray())
+				.withPort(config.port())
+				.withSsl(config.ssl())
+				.withTimeout(Duration.of(config.timeout(), ChronoUnit.MILLIS))
+				.build();
+
+			redisClient = RedisClient.create(redisURI);
+
+			initScript(redisClient);
 		} catch (final Exception e) {
 			quit();
 			throw e;
@@ -45,14 +56,14 @@ public class RedisSMQ {
 	/**
 	 * Gets a connection from the pool.
 	 */
-	protected Jedis jedis() {
-		return jedisPool.getResource();
+	protected RedisClient redisClient() {
+		return redisClient;
 	}
 
 	/**
 	 * Jedis supplier.
 	 */
-	protected Supplier<Jedis> jedisSupplier = this::jedis;
+	protected Supplier<RedisClient> jedisSupplier = this::redisClient;
 
 	// ---------------------------------------------------------------- cmds
 
@@ -140,9 +151,8 @@ public class RedisSMQ {
 	 */
 	public void quit() {
 		try {
-			if (this.jedisPool != null) {
-				this.jedisPool.close();
-				this.jedisPool.destroy();
+			if (this.redisClient != null) {
+				this.redisClient.close();
 			}
 		}
 		catch (Exception ex) {
@@ -160,10 +170,14 @@ public class RedisSMQ {
 	protected String receiveMessageSha1;
 	protected String changeMessageVisibility;
 
-	protected void initScript(Jedis jedis) {
-		popMessageSha1 = jedis.scriptLoad(SCRIPT_POPMESSAGE);
-		receiveMessageSha1 = jedis.scriptLoad(SCRIPT_RECEIVEMESSAGE);
-		changeMessageVisibility = jedis.scriptLoad(SCRIPT_CHANGEMESSAGEVISIBILITY);
+	protected void initScript(RedisClient redisClient) {
+		try(StatefulRedisConnection<String, String> redisConnection = redisClient.connect()) {
+			RedisCommands<String, String> redisCommands = redisConnection.sync();
+
+			popMessageSha1 = redisCommands.scriptLoad(SCRIPT_POPMESSAGE);
+			receiveMessageSha1 = redisCommands.scriptLoad(SCRIPT_RECEIVEMESSAGE);
+			changeMessageVisibility = redisCommands.scriptLoad(SCRIPT_CHANGEMESSAGEVISIBILITY);
+		}
 	}
 
 }

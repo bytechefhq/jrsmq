@@ -3,8 +3,8 @@ package com.oblac.jrsmq.cmd;
 import com.oblac.jrsmq.QueueAttributes;
 import com.oblac.jrsmq.RedisSMQConfig;
 import com.oblac.jrsmq.Validator;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.Transaction;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.api.sync.RedisCommands;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -25,7 +25,7 @@ public class SetQueueAttributesCmd extends BaseQueueCmd<QueueAttributes> {
 	private int delay = UNSET_VALUE;
 	private final GetQueueAttributesCmd getQueueAttributes;
 
-	public SetQueueAttributesCmd(RedisSMQConfig config, Supplier<Jedis> jedisSupplier) {
+	public SetQueueAttributesCmd(RedisSMQConfig config, Supplier<RedisClient> jedisSupplier) {
 		super(config, jedisSupplier);
 		this.getQueueAttributes = new GetQueueAttributesCmd(config, jedisSupplier);
 	}
@@ -69,37 +69,37 @@ public class SetQueueAttributesCmd extends BaseQueueCmd<QueueAttributes> {
 	 * @return {@link QueueAttributes}.
 	 */
 	@Override
-	protected QueueAttributes exec(Jedis jedis) {
+	protected QueueAttributes exec(RedisCommands<String, String> redisCommands) {
 		Validator.create()
 			.assertValidQname(qname)
 			.assertAtLeastOneSet(vt, maxSize, delay);
 
-		getQueue(jedis, qname, false); // just to check if it is an existing queue
+		getQueue(redisCommands, qname, false); // just to check if it is an existing queue
 
 		String key = config.redisNs() + qname + Q;
 
-		List<String> times = jedis.time();
+		List<String> times = redisCommands.time();
 
-		Transaction tx = jedis.multi();
+		redisCommands.multi();
 
-		tx.hset(key, "modified", times.get(0));
+		redisCommands.hset(key, "modified", times.get(0));
 
 		Validator validator = Validator.create();
 
 		if (vt != UNSET_VALUE) {
 			validator.assertValidVt(vt);
-			tx.hset(key, "vt", String.valueOf(vt));
+			redisCommands.hset(key, "vt", String.valueOf(vt));
 		}
 		if (maxSize != UNSET_VALUE) {
 			validator.assertValidMaxSize(maxSize);
-			tx.hset(key, "maxsize", String.valueOf(maxSize));
+			redisCommands.hset(key, "maxsize", String.valueOf(maxSize));
 		}
 		if (delay != UNSET_VALUE) {
 			validator.assertValidDelay(delay);
-			tx.hset(key, "delay", String.valueOf(delay));
+			redisCommands.hset(key, "delay", String.valueOf(delay));
 		}
 
-		tx.exec();
+		redisCommands.exec();
 
 		return getQueueAttributes.qname(qname).exec();
 	}

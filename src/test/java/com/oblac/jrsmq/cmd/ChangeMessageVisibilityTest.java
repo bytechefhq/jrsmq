@@ -46,7 +46,7 @@ public class ChangeMessageVisibilityTest {
 
 		QueueMessage queueMessage = rsmq.receiveMessage().qname(TEST_QNAME).exec();
 
-		assertNull(queueMessage);	// message is not visible any more.
+		assertNull(queueMessage);	// message is not visible anymore.
 
 		// clean up
 

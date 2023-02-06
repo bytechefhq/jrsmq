@@ -4,7 +4,9 @@ import com.oblac.jrsmq.QueueDef;
 import com.oblac.jrsmq.QueueMessage;
 import com.oblac.jrsmq.RedisSMQConfig;
 import com.oblac.jrsmq.Validator;
-import redis.clients.jedis.Jedis;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.ScriptOutputType;
+import io.lettuce.core.api.sync.RedisCommands;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -20,7 +22,7 @@ public class ReceiveMessageCmd extends BaseQueueCmd<QueueMessage> {
 	private String name;
 	private int vt = UNSET_VALUE;
 
-	public ReceiveMessageCmd(RedisSMQConfig config, Supplier<Jedis> jedisSupplier, String receiveMessageSha1) {
+	public ReceiveMessageCmd(RedisSMQConfig config, Supplier<RedisClient> jedisSupplier, String receiveMessageSha1) {
 		super(config, jedisSupplier);
 		this.receiveMessageSha1 = receiveMessageSha1;
 	}
@@ -46,11 +48,11 @@ public class ReceiveMessageCmd extends BaseQueueCmd<QueueMessage> {
 	 * @return {@link QueueMessage} or {@code null} if message is not there.
 	 */
 	@Override
-	protected QueueMessage exec(Jedis jedis) {
+	protected QueueMessage exec(RedisCommands<String, String> redisCommands) {
 		Validator.create()
 			.assertValidQname(name);
 
-		QueueDef q = getQueue(jedis, name, false);
+		QueueDef q = getQueue(redisCommands, name, false);
 
 		int vt = this.vt;
 		if (vt == UNSET_VALUE) {
@@ -58,8 +60,8 @@ public class ReceiveMessageCmd extends BaseQueueCmd<QueueMessage> {
 		}
 		Validator.create().assertValidVt(vt);
 
-		List result = (List) jedis.evalsha(
-			receiveMessageSha1, 3, config.redisNs() + name, String.valueOf(q.ts()), String.valueOf(q.ts() + vt * 1000));
+		List<?> result = redisCommands.evalsha(
+			receiveMessageSha1, ScriptOutputType.MULTI, config.redisNs() + name, String.valueOf(q.ts()), String.valueOf(q.ts() + vt * 1000));
 
 		return createQueueMessage(result);
 	}

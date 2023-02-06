@@ -1,7 +1,8 @@
 package com.oblac.jrsmq;
 
 import com.oblac.jrsmq.cmd.BaseQueueCmd;
-import redis.clients.jedis.Jedis;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.api.sync.RedisCommands;
 
 public class Fixtures {
 
@@ -32,10 +33,10 @@ public class Fixtures {
 	}
 
 	public static QueueDef getQueue(TestRedisSMQ redisSMQ, String name) {
-		return new BaseQueueCmd<QueueDef>(redisSMQ.config(), redisSMQ::jedis) {
+		return new BaseQueueCmd<QueueDef>(redisSMQ.config(), redisSMQ::redisClient) {
 			@Override
-			protected QueueDef exec(Jedis jedis) {
-				return getQueue(jedis, name, true);
+			protected QueueDef exec(RedisCommands<String, String> redisCommands) {
+				return getQueue(redisCommands, name, true);
 			}
 		}.exec();
 	}

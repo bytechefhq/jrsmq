@@ -4,7 +4,9 @@ import com.oblac.jrsmq.QueueDef;
 import com.oblac.jrsmq.QueueMessage;
 import com.oblac.jrsmq.RedisSMQConfig;
 import com.oblac.jrsmq.Validator;
-import redis.clients.jedis.Jedis;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.ScriptOutputType;
+import io.lettuce.core.api.sync.RedisCommands;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -20,7 +22,7 @@ public class PopMessageCmd extends BaseQueueCmd<QueueMessage> {
 	private final String popMessageSha1;
 	private String qname;
 
-	public PopMessageCmd(RedisSMQConfig config, Supplier<Jedis> jedisSupplier, String popMessageSha1) {
+	public PopMessageCmd(RedisSMQConfig config, Supplier<RedisClient> jedisSupplier, String popMessageSha1) {
 		super(config, jedisSupplier);
 		this.popMessageSha1 = popMessageSha1;
 	}
@@ -37,12 +39,12 @@ public class PopMessageCmd extends BaseQueueCmd<QueueMessage> {
 	 * @return {@link QueueMessage} or {@code null} if no message is there.
 	 */
 	@Override
-	protected QueueMessage exec(Jedis jedis) {
+	protected QueueMessage exec(RedisCommands<String, String> redisCommands) {
 		Validator.create().assertValidQname(qname);
 
-		QueueDef q = getQueue(jedis, qname, false);
+		QueueDef q = getQueue(redisCommands, qname, false);
 
-		List result = (List)jedis.evalsha(popMessageSha1, 2, config.redisNs() + qname, String.valueOf(q.ts()));
+		List<?> result = redisCommands.evalsha(popMessageSha1, ScriptOutputType.MULTI, config.redisNs() + qname, String.valueOf(q.ts()));
 
 		return createQueueMessage(result);
 	}

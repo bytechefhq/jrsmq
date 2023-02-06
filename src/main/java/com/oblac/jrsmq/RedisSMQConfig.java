@@ -1,7 +1,5 @@
 package com.oblac.jrsmq;
 
-import redis.clients.jedis.Protocol;
-
 /**
  * RedsSMQ Configuration builder.
  */
@@ -10,7 +8,7 @@ public class RedisSMQConfig {
 	private String host;
 	private int port;
 	private int timeout;
-	private int database = Protocol.DEFAULT_DATABASE;
+	private int database;
 	private String ns;
 	private String password;
 	private String redisns;

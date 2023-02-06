@@ -36,7 +36,7 @@ public class Validator {
 		return this;
 	}
 
-	private final Pattern namePattern = Pattern.compile("^([a-zA-Z0-9_-]){1,160}$");
+	private final Pattern namePattern = Pattern.compile("^([a-zA-Z0-9_\\.\\/-]){1,160}$");
 
 	public Validator assertValidQname(String qname) {
 		if (qname == null) {

@@ -3,8 +3,8 @@ package com.oblac.jrsmq.cmd;
 import com.oblac.jrsmq.QueueDef;
 import com.oblac.jrsmq.RedisSMQConfig;
 import com.oblac.jrsmq.Validator;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.Transaction;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.api.sync.RedisCommands;
 
 import java.util.function.Supplier;
 
@@ -19,7 +19,7 @@ public class SendMessageCmd extends BaseQueueCmd<String> {
 	private String message;
 	private int delay;
 
-	public SendMessageCmd(RedisSMQConfig config, Supplier<Jedis> jedisSupplier) {
+	public SendMessageCmd(RedisSMQConfig config, Supplier<RedisClient> jedisSupplier) {
 		super(config, jedisSupplier);
 	}
 
@@ -52,23 +52,23 @@ public class SendMessageCmd extends BaseQueueCmd<String> {
 	 * @return The internal message id.
 	 */
 	@Override
-	protected String exec(Jedis jedis) {
-		QueueDef q = getQueue(jedis, qname, true);
+	protected String exec(RedisCommands<String, String> redisCommands) {
+		QueueDef q = getQueue(redisCommands, qname, true);
 
 		Validator.create()
 			.assertValidQname(qname)
 			.assertValidDelay(delay)
 			.assertValidMessage(q, message);
 
-		Transaction tx = jedis.multi();
+		redisCommands.multi();
 
 		String key = config.redisNs() + qname + Q;
 
-		tx.zadd(config.redisNs() + qname, q.ts() + delay * 1000, q.uid());
-		tx.hset(key, q.uid(), message);
-		tx.hincrBy(key, "totalsent", 1);
+		redisCommands.zadd(config.redisNs() + qname, q.ts() + delay * 1000, q.uid());
+		redisCommands.hset(key, q.uid(), message);
+		redisCommands.hincrby(key, "totalsent", 1);
 
-		tx.exec();
+		redisCommands.exec();
 
 		return q.uid();
 	}

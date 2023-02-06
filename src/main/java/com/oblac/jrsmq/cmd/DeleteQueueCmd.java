@@ -4,8 +4,9 @@ import com.oblac.jrsmq.RedisSMQConfig;
 import com.oblac.jrsmq.RedisSMQException;
 import com.oblac.jrsmq.Validator;
 import com.oblac.jrsmq.Values;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.Transaction;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.TransactionResult;
+import io.lettuce.core.api.sync.RedisCommands;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -20,7 +21,7 @@ public class DeleteQueueCmd extends BaseQueueCmd<Integer> {
 
 	private String qname;
 
-	public DeleteQueueCmd(RedisSMQConfig config, Supplier<Jedis> jedisSupplier) {
+	public DeleteQueueCmd(RedisSMQConfig config, Supplier<RedisClient> jedisSupplier) {
 		super(config, jedisSupplier);
 	}
 
@@ -36,19 +37,21 @@ public class DeleteQueueCmd extends BaseQueueCmd<Integer> {
 	 * @return 1
 	 */
 	@Override
-	protected Integer exec(Jedis jedis) {
+	protected Integer exec(RedisCommands<String, String> redisCommands) {
 		Validator.create()
 			.assertValidQname(qname);
 
 		String key = config.redisNs() + qname;
 
-		Transaction tx = jedis.multi();
+		redisCommands.multi();
 
-		tx.del(key + Values.Q);
-		tx.del(key);
-		tx.srem(config.redisNs() + QUEUES, qname);
+		redisCommands.del(key + Values.Q);
+		redisCommands.del(key);
+		redisCommands.srem(config.redisNs() + QUEUES, qname);
 
-		List result = tx.exec();
+		TransactionResult transactionResult = redisCommands.exec();
+
+		List<?> result = transactionResult.stream().toList();
 
 		if (toInt(result, 0) == 0) {
 			throw new RedisSMQException("Queue not found: " + qname);

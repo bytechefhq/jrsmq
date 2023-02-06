@@ -3,8 +3,9 @@ package com.oblac.jrsmq.cmd;
 import com.oblac.jrsmq.RedisSMQConfig;
 import com.oblac.jrsmq.RedisSMQException;
 import com.oblac.jrsmq.Validator;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.Transaction;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.TransactionResult;
+import io.lettuce.core.api.sync.RedisCommands;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -23,7 +24,7 @@ public class CreateQueueCmd extends BaseQueueCmd<Integer> {
 	private int maxsize = 65536;
 	private String qname;
 
-	public CreateQueueCmd(RedisSMQConfig config, Supplier<Jedis> jedisSupplier) {
+	public CreateQueueCmd(RedisSMQConfig config, Supplier<RedisClient> jedisSupplier) {
 		super(config, jedisSupplier);
 	}
 
@@ -65,34 +66,37 @@ public class CreateQueueCmd extends BaseQueueCmd<Integer> {
 	 * @return 1
 	 */
 	@Override
-	protected Integer exec(Jedis jedis) {
+	protected Integer exec(RedisCommands<String, String> redisCommands) {
 		Validator.create()
 			.assertValidQname(qname)
 			.assertValidVt(vt)
 			.assertValidDelay(delay)
 			.assertValidMaxSize(maxsize);
 
-		List<String> times = jedis.time();
+		List<String> times = redisCommands.time();
 
-		Transaction tx = jedis.multi();
+		redisCommands.multi();
 
 		String key = config.redisNs() + qname + Q;
 
-		tx.hsetnx(key, "vt", String.valueOf(vt));
-		tx.hsetnx(key, "delay", String.valueOf(delay));
-		tx.hsetnx(key, "maxsize", String.valueOf(maxsize));
-		tx.hsetnx(key, "created", times.get(0));
-		tx.hsetnx(key, "modified", times.get(0));
+		redisCommands.hsetnx(key, "vt", String.valueOf(vt));
+		redisCommands.hsetnx(key, "delay", String.valueOf(delay));
+		redisCommands.hsetnx(key, "maxsize", String.valueOf(maxsize));
+		redisCommands.hsetnx(key, "created", times.get(0));
+		redisCommands.hsetnx(key, "modified", times.get(0));
 
-		List results = tx.exec();
+		TransactionResult transactionResult = redisCommands.exec();
 
-		int createdCount = toInt(results, 0);
+		@SuppressWarnings({"rawtypes", "unchecked"})
+		List<Boolean> results = (List)transactionResult.stream().toList();
+
+		int createdCount = results.stream().anyMatch(result -> !result) ? 0 : 1;
 
 		if (createdCount == 0) {
 			throw new RedisSMQException("Queue already exists: " + qname);
 		}
 
-		jedis.sadd(config.redisNs() + QUEUES, qname);
+		redisCommands.sadd(config.redisNs() + QUEUES, qname);
 
 		return createdCount;
 	}

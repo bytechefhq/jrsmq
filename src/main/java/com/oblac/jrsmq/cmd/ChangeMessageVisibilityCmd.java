@@ -3,7 +3,9 @@ package com.oblac.jrsmq.cmd;
 import com.oblac.jrsmq.QueueDef;
 import com.oblac.jrsmq.RedisSMQConfig;
 import com.oblac.jrsmq.Validator;
-import redis.clients.jedis.Jedis;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.ScriptOutputType;
+import io.lettuce.core.api.sync.RedisCommands;
 
 import java.util.function.Supplier;
 
@@ -18,7 +20,7 @@ public class ChangeMessageVisibilityCmd extends BaseQueueCmd<Integer> {
 	private String id;
 	private int vt;
 
-	public ChangeMessageVisibilityCmd(RedisSMQConfig config, Supplier<Jedis> jedisSupplier, String changeMessageVisibilitySha1) {
+	public ChangeMessageVisibilityCmd(RedisSMQConfig config, Supplier<RedisClient> jedisSupplier, String changeMessageVisibilitySha1) {
 		super(config, jedisSupplier);
 		this.changeMessageVisibilitySha1 = changeMessageVisibilitySha1;
 	}
@@ -51,15 +53,15 @@ public class ChangeMessageVisibilityCmd extends BaseQueueCmd<Integer> {
 	 * @return 1 if successful, 0 if the message was not found.
 	 */
 	@Override
-	protected Integer exec(Jedis jedis) {
+	protected Integer exec(RedisCommands<String, String> redisCommands) {
 		Validator.create()
 			.assertValidQname(qname)
 			.assertValidVt(vt)
 			.assertValidId(id);
 
-		QueueDef q = getQueue(jedis, qname, false);
+		QueueDef q = getQueue(redisCommands, qname, false);
 
-		Long foo = (Long) jedis.evalsha(changeMessageVisibilitySha1, 3, config.redisNs() + qname, id, String.valueOf(q.ts() + vt * 1000));
+		Long foo = redisCommands.evalsha(changeMessageVisibilitySha1, ScriptOutputType.INTEGER, config.redisNs() + qname, id, String.valueOf(q.ts() + vt * 1000));
 
 		return foo.intValue();
 	}
